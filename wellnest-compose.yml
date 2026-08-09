@@ -1,0 +1,168 @@
+# Add a .env file with the following variables to configure the deployment
+# SITE_NAME=your-bench-site-name
+# MARIADB_ROOT_PASSWORD=your-mariadb-root-password
+
+x-customizable-image: &customizable_image
+  image: docker.io/randhirk/careyogi-erpnext:latest
+  pull_policy: ${PULL_POLICY:-always}
+  restart: ${RESTART_POLICY:-unless-stopped}
+
+x-depends-on-configurator: &depends_on_configurator
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+
+x-depends-on-create-site: &depends_on_create_site
+  depends_on:
+    create-site:
+      condition: service_completed_successfully
+
+x-backend-defaults: &backend_defaults
+  <<: [*depends_on_configurator, *customizable_image]
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+    - logs:/home/frappe/frappe-bench/logs
+  networks:
+    - careyogi_network
+
+services:
+  configurator:
+    <<: *customizable_image
+    platform: linux/amd64
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    entrypoint:
+      - bash
+      - -c
+    # add redis_socketio for backward compatibility
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+        bench set-config -g chromium_path /usr/bin/chromium-headless-shell;
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: 3306
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: 9000
+    depends_on: {}
+    restart: on-failure
+    
+  # Backend database
+  mariadb:
+    image: mariadb:10.8
+    restart: unless-stopped
+    networks:
+      - careyogi_network
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  # Redis caches
+  redis-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - careyogi_network
+
+  redis-queue:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - careyogi_network
+
+  backend:
+    <<: [*backend_defaults, *depends_on_create_site]
+    environment:
+      - DB_HOST=mariadb
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+
+  # Python Queue Workers (using the exact same image)
+  worker-default:
+    <<: [*backend_defaults, *depends_on_create_site]
+    command: bench worker --queue default
+    environment:
+      - DB_HOST=mariadb
+
+  worker-long:
+    <<: [*backend_defaults, *depends_on_create_site]
+    command: bench worker --queue long
+    environment:
+      - DB_HOST=mariadb
+
+  schedule:
+    <<: [*backend_defaults, *depends_on_create_site]
+    command: bench schedule
+    environment:
+      - DB_HOST=mariadb
+
+  create-site:
+    <<: *backend_defaults
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        wait-for-it -t 120 mariadb:3306;
+        wait-for-it -t 120 redis-cache:6379;
+        wait-for-it -t 120 redis-queue:6379;
+        export start=$$(date +%s);
+        until [[ -n $$(grep -hs ^ sites/common_site_config.json 2>/dev/null) ]] || (( $$(date +%s)-start > 120 )); do
+          sleep 5;
+        done;
+        echo "Creating site now..."
+        if [ ! -d sites/${SITE_NAME} ]; then
+          bench new-site ${SITE_NAME}
+          --mariadb-user-host-login-scope=%
+          --db-root-username=root
+          --db-root-password=${MARIADB_ROOT_PASSWORD}
+          --admin-password=admin
+          --install-app erpnext
+          --install-app payments
+          --install-app hrms
+          --install-app india_compliance
+          --install-app wellnest
+          --set-default;          
+        else
+          echo "Site already exists. Running bench migrate instead"
+          bench --site ${SITE_NAME} migrate;
+        fi          
+
+  nginx-router:
+    <<: *backend_defaults
+    command: nginx-entrypoint.sh
+    environment:
+      - BACKEND=backend:8000
+      - SOCKETIO=backend:9000
+      - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
+    ports:
+      - "8080:8080" # Exposed to host Nginx router handling the SSL cert
+    networks:
+      - nginx-proxy-manager_default
+      - careyogi_network
+volumes:
+  mariadb-data:
+  sites:
+  logs:
+
+networks:
+  careyogi_network:
+    driver: bridge
+  nginx-proxy-manager_default:
+    external: true
+    
