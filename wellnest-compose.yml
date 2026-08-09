@@ -127,22 +127,21 @@ services:
         done;
         echo "Creating site now..."
         if [ ! -d sites/${SITE_NAME} ]; then
-          bench new-site ${SITE_NAME}
-          --mariadb-user-host-login-scope=%
-          --db-root-username=root
-          --db-root-password=${MARIADB_ROOT_PASSWORD}
-          --admin-password=admin
-          --install-app erpnext
-          --install-app payments
-          --install-app hrms
-          --install-app india_compliance
-          --install-app wellnest
-          --set-default;          
+          bench new-site ${SITE_NAME} \
+          --mariadb-user-host-login-scope=% \
+          --db-root-username=root \
+          --db-root-password=${MARIADB_ROOT_PASSWORD} \
+          --admin-password=admin \
+          --install-app erpnext \
+          --install-app payments \
+          --install-app hrms \
+          --install-app india_compliance \
+          --install-app wellnest \
+          --set-default;
         else
           echo "Site already exists. Running bench migrate instead"
           bench --site ${SITE_NAME} migrate;
-        fi          
-
+        fi
   nginx-router:
     <<: *backend_defaults
     command: nginx-entrypoint.sh
