@@ -125,8 +125,9 @@ services:
         until [[ -n $$(grep -hs ^ sites/common_site_config.json 2>/dev/null) ]] || (( $$(date +%s)-start > 120 )); do
           sleep 5;
         done;
-        echo "Creating site now..."
+
         if [ ! -d sites/${SITE_NAME} ]; then
+          echo "Creating site now..."
           bench new-site ${SITE_NAME} \
           --mariadb-user-host-login-scope=% \
           --db-root-username=root \
