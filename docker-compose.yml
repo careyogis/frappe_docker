@@ -23,12 +23,13 @@ x-backend-defaults: &backend_defaults
     - sites:/home/frappe/frappe-bench/sites
     - logs:/home/frappe/frappe-bench/logs
   networks:
-    - careyogi_network
+    - careyogi-network
 
 services:
   configurator:
     <<: *customizable_image
     platform: linux/amd64
+    container_name: configurator
     volumes:
       - sites:/home/frappe/frappe-bench/sites
     entrypoint:
@@ -57,9 +58,10 @@ services:
   # Backend database
   mariadb:
     image: mariadb:10.8
+    container_name: mariadb
     restart: unless-stopped
     networks:
-      - careyogi_network
+      - careyogi-network
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
@@ -74,18 +76,21 @@ services:
   # Redis caches
   redis-cache:
     image: redis:7-alpine
+    container_name: redis-cache
     restart: unless-stopped
     networks:
-      - careyogi_network
+      - careyogi-network
 
   redis-queue:
     image: redis:7-alpine
+    container_name: redis-queue
     restart: unless-stopped
     networks:
-      - careyogi_network
+      - careyogi-network
 
   backend:
     <<: [*backend_defaults, *depends_on_create_site]
+    container_name: backend
     environment:
       - DB_HOST=mariadb
       - REDIS_CACHE=redis-cache:6379
@@ -94,24 +99,28 @@ services:
   # Python Queue Workers (using the exact same image)
   worker-default:
     <<: [*backend_defaults, *depends_on_create_site]
+    container_name: worker-default
     command: bench worker --queue default
     environment:
       - DB_HOST=mariadb
 
   worker-long:
     <<: [*backend_defaults, *depends_on_create_site]
+    container_name: worker-long
     command: bench worker --queue long
     environment:
       - DB_HOST=mariadb
 
   schedule:
     <<: [*backend_defaults, *depends_on_create_site]
+    container_name: schedule
     command: bench schedule
     environment:
       - DB_HOST=mariadb
 
   create-site:
     <<: *backend_defaults
+    container_name: create-site
     restart: "no"
     entrypoint:
       - bash
@@ -143,8 +152,10 @@ services:
           echo "Site already exists. Running bench migrate instead"
           bench --site ${SITE_NAME} migrate;
         fi
-  nginx-router:
+
+  frontend:
     <<: *backend_defaults
+    container_name: frontend
     command: nginx-entrypoint.sh
     environment:
       - BACKEND=backend:8000
@@ -153,16 +164,20 @@ services:
     ports:
       - "8080:8080" # Exposed to host Nginx router handling the SSL cert
     networks:
-      - nginx-proxy-manager_default
-      - careyogi_network
+      - nginx-proxy-manager-network
+      - careyogi-network
 volumes:
   mariadb-data:
+    name: mariadb-data  
   sites:
+    name: sites
   logs:
+    name: logs
 
 networks:
-  careyogi_network:
+  careyogi-network:
     driver: bridge
-  nginx-proxy-manager_default:
+    name: careyogi-network
+  nginx-proxy-manager-network:
     external: true
     

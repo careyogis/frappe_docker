@@ -21,6 +21,6 @@ echo "Listing newly created containers:"
 /usr/bin/docker compose ps
 
 echo "Running Frappe Multi-Tenant Migrations..."
-/usr/bin/docker compose exec -T backend bench --site careyogis.local migrate
+/usr/bin/docker compose exec -T backend bench --site "${SITE_NAME}" migrate
 
 echo "==== Deployment Completed Successfully ===="

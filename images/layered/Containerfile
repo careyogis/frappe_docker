@@ -51,6 +51,9 @@ RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 COPY resources/core/start.sh /usr/local/bin/start.sh
 RUN chmod 755 /usr/local/bin/start.sh
+USER root                                                                                                                                             
+RUN python3 -m pip install --force-reinstall "frappe-bench>=5.22.0"                                                                                   
+USER frappe                                                                                                                                           
 
 USER frappe
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
