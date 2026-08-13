@@ -152,6 +152,8 @@ services:
           echo "Site already exists. Running bench migrate instead"
           bench --site ${SITE_NAME} migrate;
         fi
+        echo "Clearing cache for site ${SITE_NAME}..."
+        bench --site ${SITE_NAME} clear-cache;
 
   frontend:
     <<: *backend_defaults
