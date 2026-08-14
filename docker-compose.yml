@@ -150,7 +150,7 @@ services:
           --set-default;
         else
           echo "Site already exists. Running bench migrate instead"
-          bench --site ${SITE_NAME} migrate;
+          bench --site ${SITE_NAME} migrate --skip-failing;
         fi
         echo "Clearing cache for site ${SITE_NAME}..."
         bench --site ${SITE_NAME} clear-cache;
